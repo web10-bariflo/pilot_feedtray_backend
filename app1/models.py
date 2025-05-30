@@ -1,13 +1,14 @@
+# app1/models.py
 from django.db import models
+from django.utils import timezone
 
 
-class Pilot_Feedtray(models.Model):
-    base_value = models.CharField(max_length=250, null=True, blank=True)
-    intial_value = models.CharField(max_length=250, null=True, blank=True)
-    cycle_count = models.CharField(max_length=250, null=True, blank=True,default='0')
-    remaining_value = models.CharField(max_length=255, null=True, blank=True)
-    cycle_value = models.CharField(max_length=250, null=True, blank=True)  
-    timestamp = models.DateTimeField(auto_now_add=True)
-   
-
-    
+class MQTTMessage(models.Model):
+    device_id = models.CharField(max_length=100, db_index=True)
+    topic = models.CharField(max_length=200,null=True,blank=True)
+    weight_intial= models.CharField(max_length=200,null=True,blank=True)
+    weight_final = models.CharField(max_length=200,null=True,blank=True)
+    # payload = models.CharField(max_length=200,null=True,blank=True)
+    timestamp = models.DateTimeField(default=timezone.now)
+    cyclecount = models.CharField(max_length=20, null=True, blank=True)
+    cycle_number = models.PositiveIntegerField(default=1)

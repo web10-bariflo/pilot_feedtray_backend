@@ -1,7 +1,8 @@
 from django.contrib import admin
-from.models import Pilot_Feedtray
+from.models import MQTTMessage
 
 
-@admin.register(Pilot_Feedtray)
-class Pilot_FeedtrayAdmin(admin.ModelAdmin):
-    list_display=["base_value","intial_value","cycle_value","cycle_count","remaining_value","timestamp"]
+@admin.register(MQTTMessage)
+class MQTTMessageAdmin(admin.ModelAdmin):
+    list_display=["device_id","topic","weight_intial","weight_final","timestamp","cycle_number"]
+   

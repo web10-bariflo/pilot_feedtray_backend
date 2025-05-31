@@ -1,149 +1,14 @@
-# import os
-# import time
-# import re
-# import django
-# import paho.mqtt.client as mqtt
-# from django.utils.timezone import now
-# from app1.models import MQTTMessage
-
-# MQTT_BROKER = 'mqttbroker.bc-pl.com'
-# MQTT_PORT = 1883
-# MQTT_USER = 'mqttuser'
-# MQTT_PASSWORD = 'Bfl@2025'
-
-# MQTT_TOPICS = [
-#     'feeder/fdtryA00/cycle_status',
-#     'feeder/fdtryA00/weight_initial',
-#     'feeder/fdtryA00/weight_final',
-# ]
-
-# device_cycle_tracker = {}   # Tracks current cycle number per device
-# device_cycle_buffer = {}    # Buffers messages until a full cycle is complete
-
-# def extract_cyclecount(payload):
-#     match = re.search(r'cycle(?:count)?\s*=\s*(\d+)', payload, re.I)
-#     if match:
-#         return match.group(1)
-#     match = re.search(r'=\s*(\d+)', payload)
-#     if match:
-#         return match.group(1)
-#     return None
-
-# def on_connect(client, userdata, flags, rc):
-#     if rc == 0:
-#         print("✅ Connected to MQTT broker.")
-#         for topic in MQTT_TOPICS:
-#             client.subscribe(topic)
-#             print(f"📡 Subscribed to: {topic}")
-#     else:
-#         print(f"❌ MQTT connection failed with code {rc}")
-
-# def on_message(client, userdata, msg):
-#     try:
-#         timestamp = now()
-#         payload = msg.payload.decode('utf-8').strip()
-#         topic_parts = msg.topic.split('/')
-#         device_id = topic_parts[1] if len(topic_parts) > 1 else 'unknown'
-#         topic_name = topic_parts[2] if len(topic_parts) > 2 else 'unknown'
-#         cyclecount = extract_cyclecount(payload)
-
-#         # Initialize cycle number
-#         if device_id not in device_cycle_tracker:
-#             device_cycle_tracker[device_id] = 1
-
-#         current_cycle = device_cycle_tracker[device_id]
-
-#         # Initialize buffer if needed
-#         if device_id not in device_cycle_buffer:
-#             device_cycle_buffer[device_id] = {
-#                 'weight_initial': None,
-#                 'cycle_status': [],
-#                 'weight_final': None,
-#             }
-
-#         buffer = device_cycle_buffer[device_id]
-
-#         # Update buffer
-#         if topic_name == 'weight_initial':
-#             buffer['weight_initial'] = payload
-#         elif topic_name == 'cycle_status':
-#             buffer['cycle_status'].append(payload.lower())
-#         elif topic_name == 'weight_final':
-#             buffer['weight_final'] = payload
-
-#         # Save to DB with current cycle number
-#         MQTTMessage.objects.create(
-#             device_id=device_id,
-#             topic=topic_name,
-#             payload=payload,
-#             timestamp=timestamp,
-#             cycle_number=current_cycle,
-#             cyclecount=cyclecount
-#         )
-
-#         print(f"✅ Saved: {device_id} | Cycle {current_cycle} | {topic_name} | {payload}")
-
-#         # Check if cycle is completed
-#         if (
-#             buffer['weight_initial'] is not None and
-#             any('initial' in s for s in buffer['cycle_status']) and
-#             any('running' in s for s in buffer['cycle_status']) and
-#             any('completed' in s for s in buffer['cycle_status']) and
-#             buffer['weight_final'] is not None
-#         ):
-#             print(f"🔁 Cycle {current_cycle} completed for {device_id}")
-
-#             # Prepare for next cycle
-#             device_cycle_tracker[device_id] = current_cycle + 1
-#             device_cycle_buffer[device_id] = {
-#                 'weight_initial': None,
-#                 'cycle_status': [],
-#                 'weight_final': None,
-#             }
-
-#     except Exception as e:
-#         print(f"❌ Error: {e}")
-
-# def mqtt_connect():
-#     client = mqtt.Client()
-#     client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
-#     client.on_connect = on_connect
-#     client.on_message = on_message
-
-#     try:
-#         client.connect(MQTT_BROKER, MQTT_PORT, 60)
-#     except Exception as e:
-#         print(f"❌ Failed to connect to broker: {e}")
-#         return
-
-#     client.loop_start()
-#     try:
-#         while True:
-#             time.sleep(1)
-#     except KeyboardInterrupt:
-#         print("⛔ Stopped.")
-#         client.loop_stop()
-#         client.disconnect()
-
-# if __name__ == "__main__":
-#     mqtt_connect()
-
-
-
-
 
 import os
-import time
-import re
 import django
 import paho.mqtt.client as mqtt
 from django.utils.timezone import now
 
-# Set up Django
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "your_project.settings")  # Change to your actual project name
+# Set up Django environment
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pilot_feedtray.settings")
 django.setup()
 
-from app1.models import MQTTMessage  # Import after Django setup
+from app1.models import MQTTMessage, Cycle
 
 MQTT_BROKER = 'mqttbroker.bc-pl.com'
 MQTT_PORT = 1883
@@ -151,20 +16,41 @@ MQTT_USER = 'mqttuser'
 MQTT_PASSWORD = 'Bfl@2025'
 
 MQTT_TOPICS = [
-    'feeder/fdtryA00/cycle_status',
-    'feeder/fdtryA00/weight_initial',
-    'feeder/fdtryA00/weight_final',
+    'feeder/+/weight_initial',
 ]
 
-device_cycle_tracker = {}
-device_cycle_buffer = {}
+device_cycle_tracker = {}  # Tracks current cycle number per device
+device_data = {}           # Holds per-device state
 
-def extract_cyclecount(payload):
-    match = re.search(r'cycle(?:count)?\s*=\s*(\d+)', payload, re.I)
-    if match:
-        return match.group(1)
-    match = re.search(r'=\s*(\d+)', payload)
-    return match.group(1) if match else None
+
+def frontend_cycle_input(device_id, cyclecount):
+    device = device_data.get(device_id)
+    if not device or device['weight_initial'] is None:
+        print(f"❌ No initial weight available for device {device_id}")
+        return
+
+    weight_initial = float(device['weight_initial'])
+    weight_final = weight_initial - float(cyclecount)
+    timestamp = now()
+    current_cycle = device_cycle_tracker.get(device_id, 1)
+
+    MQTTMessage.objects.create(
+        device_id=device_id,
+        topic='cyclecount',
+        weight_intial=str(weight_initial),
+        weight_final=str(weight_final),
+        cyclecount=str(cyclecount),
+        cycle_number=current_cycle,
+        timestamp=timestamp,
+    )
+
+    print(f"✅ Saved cycle data | Device: {device_id} | Cycle: {current_cycle} | Initial: {weight_initial} | Final: {weight_final} | Count: {cyclecount}")
+
+    device['weight_final'] = weight_final
+    if weight_final == 1.0:
+        device['allow_new_weight'] = False
+        print(f"⚠️ Device {device_id}: Final weight reached 1.0. No further weight_initial < 5 will be processed.")
+
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -175,70 +61,91 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"❌ MQTT connection failed with code {rc}")
 
+
 def on_message(client, userdata, msg):
     try:
-        timestamp = now()
         payload = msg.payload.decode('utf-8').strip()
         topic_parts = msg.topic.split('/')
         device_id = topic_parts[1] if len(topic_parts) > 1 else 'unknown'
         topic_name = topic_parts[2] if len(topic_parts) > 2 else 'unknown'
 
-        # Parse weight_initial payload to float if possible
-        weight_value = None
         if topic_name == 'weight_initial':
             try:
                 weight_value = float(payload)
             except ValueError:
-                pass  # Not a valid float, ignore or handle
+                print(f"❌ Invalid weight value: {payload}")
+                return
 
-        # Initialize cycle tracker if not exists
-        current_cycle = device_cycle_tracker.get(device_id, 1)
-        buffer = device_cycle_buffer.setdefault(device_id, {
-            'weight_initial': None,
-            'cycle_status': [],
-            'weight_final': None,
-        })
+            # ✅ Reject if new device tries to send weight_initial < 5
+            if device_id not in device_data and weight_value < 5:
+                print(f"⛔ MQTT reject: New device {device_id} must start with weight_initial >= 5. Received: {weight_value}")
+                return
 
-        # Warning on weight_initial = 5kg
-        if topic_name == 'weight_initial':
-            if weight_value == 5.0:
-                print(f"⚠️ Warning: weight_initial is 5 kg for device {device_id} at cycle {current_cycle}")
+            # ✅ Global restriction: block all weight_initial < 5 if last weight_final was 1.0
+            latest_global = MQTTMessage.objects.order_by('-timestamp').first()
+            if latest_global and latest_global.weight_final == 1.0 and weight_value < 5:
+                print(f"⛔ MQTT reject: System locked. Last weight_final = 1.0, cannot accept new weight_initial < 5 (device: {device_id})")
+                return
 
-            # Cycle completion condition
-            if weight_value == 1.0:
-                print(f"✅ Cycle {current_cycle} completed for device {device_id}")
+            # ✅ Per-device restriction via Cycle.remaining
+            latest_cycle = Cycle.objects.filter(device_id=device_id).order_by('-id').first()
+            if latest_cycle:
+                try:
+                    latest_remaining = float(latest_cycle.remaining)
+                except Exception:
+                    latest_remaining = None
+                if latest_remaining == 1.0 and weight_value < 5:
+                    print(f"⛔ MQTT reject: device {device_id} trying to publish weight_initial < 5 when remaining is 1.")
+                    return
 
-                # After completion, increment cycle count and reset buffer
+            # ✅ Now safely initialize or get device state
+            device = device_data.setdefault(device_id, {
+                'weight_initial': None,
+                'weight_final': None,
+                'allow_new_weight': True,
+            })
+
+            current_cycle = device_cycle_tracker.get(device_id, 1)
+
+            if not device['allow_new_weight'] and weight_value < 5:
+                print(f"⛔ Skipped: {device_id} sent weight_initial < 5 after final weight 1.0")
+                return
+
+            # Start a new cycle if weight_initial changed
+            if device['weight_initial'] is None or weight_value != float(device['weight_initial']):
                 device_cycle_tracker[device_id] = current_cycle + 1
-                device_cycle_buffer[device_id] = {
-                    'weight_initial': None,
-                    'cycle_status': [],
-                    'weight_final': None,
-                }
                 current_cycle = device_cycle_tracker[device_id]
+                print(f"🔄 New cycle {current_cycle} started for {device_id}")
 
-            else:
-                # Update current cycle's weight_initial
-                buffer['weight_initial'] = payload
+            device['weight_initial'] = weight_value
+            device['weight_final'] = None
+            device['allow_new_weight'] = True
 
-        elif topic_name == 'cycle_status':
-            buffer['cycle_status'].append(payload.lower())
-        elif topic_name == 'weight_final':
-            buffer['weight_final'] = payload
+            MQTTMessage.objects.create(
+                device_id=device_id,
+                topic=msg.topic,
+                weight_intial=str(weight_value),
+                weight_final=None,
+                cycle_number=current_cycle,
+                timestamp=now()
+            )
 
-        # Save message with current cycle count
-        MQTTMessage.objects.create(
-            device_id=device_id,
-            topic=topic_name,
-            payload=payload,
-            timestamp=timestamp,
-            cycle_number=current_cycle
-        )
-
-        print(f"Saved: {device_id} | Cycle {current_cycle} | {topic_name} | {payload}")
+            print(f"📥 Device: {device_id} | weight_initial: {weight_value} | Cycle: {current_cycle}")
+            print(f"✅ Saved to DB: {device_id} | weight_initial={weight_value} | cycle={current_cycle}")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Error in on_message: {e}")
+
+
+def publish_message(client, device_id, weight_initial):
+    topic = f"feeder/{device_id}/weight_initial"
+    payload = str(weight_initial)
+    result = client.publish(topic, payload)
+    status = result[0]
+    if status == 0:
+        print(f"✅ Published `{payload}` to `{topic}`")
+    else:
+        print(f"❌ Failed to publish to topic {topic}")
 
 
 def mqtt_connect():
@@ -250,14 +157,149 @@ def mqtt_connect():
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.loop_start()
+
         while True:
-            time.sleep(1)
+            cmd = input("📤 Type 'send', 'cycle', or 'exit': ").strip().lower()
+            if cmd == 'send':
+                device_id = input("🔧 Enter device_id: ").strip()
+                weight_initial = input("⚖️  Enter weight_initial: ").strip()
+                try:
+                    float(weight_initial)
+                    publish_message(client, device_id, weight_initial)
+                except ValueError:
+                    print("❌ Invalid weight_initial. Must be a number.")
+            elif cmd == 'cycle':
+                device_id = input("🔧 Enter device_id: ").strip()
+                cyclecount = input("🔁 Enter cyclecount: ").strip()
+                try:
+                    float(cyclecount)
+                    frontend_cycle_input(device_id, cyclecount)
+                except ValueError:
+                    print("❌ Invalid cyclecount. Must be a number.")
+            elif cmd == 'exit':
+                print("⛔ Stopping client...")
+                break
+            else:
+                print("❓ Unknown command. Use 'send', 'cycle', or 'exit'.")
+
+        client.loop_stop()
+        client.disconnect()
+
     except KeyboardInterrupt:
-        print("⛔ Stopped.")
+        print("⛔ Interrupted.")
         client.loop_stop()
         client.disconnect()
     except Exception as e:
         print(f"❌ Connection error: {e}")
 
+
 if __name__ == "__main__":
     mqtt_connect()
+
+
+# publisher.py
+
+# import os
+# import django
+# import paho.mqtt.client as mqtt
+
+# # Django setup
+# os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pilot_feedtray.settings")
+# django.setup()
+
+# from app1.models import MQTTMessage, Cycle
+# from django.utils.timezone import now
+
+# MQTT_BROKER = 'mqttbroker.bc-pl.com'
+# MQTT_PORT = 1883
+# MQTT_USER = 'mqttuser'
+# MQTT_PASSWORD = 'Bfl@2025'
+
+# device_cycle_tracker = {}
+# device_data = {}
+
+# def frontend_cycle_input(device_id, cyclecount):
+#     device = device_data.get(device_id)
+#     if not device or device['weight_initial'] is None:
+#         print(f"❌ No initial weight for {device_id}")
+#         return
+
+#     weight_initial = float(device['weight_initial'])
+#     weight_final = weight_initial - float(cyclecount)
+#     timestamp = now()
+#     current_cycle = device_cycle_tracker.get(device_id, 1)
+
+#     MQTTMessage.objects.create(
+#         device_id=device_id,
+#         topic='cyclecount',
+#         weight_intial=str(weight_initial),
+#         weight_final=str(weight_final),
+#         cyclecount=str(cyclecount),
+#         cycle_number=current_cycle,
+#         timestamp=timestamp,
+#     )
+
+#     print(f"✅ Cycle recorded | {device_id} | Cycle: {current_cycle} | {weight_initial} -> {weight_final}")
+
+#     device['weight_final'] = weight_final
+#     if weight_final == 1.0:
+#         device['allow_new_weight'] = False
+#         print(f"⚠️ {device_id} reached final weight 1.0")
+
+# def publish_message(client, device_id, weight_initial):
+#     topic = f"feeder/{device_id}/weight_initial"
+#     payload = str(weight_initial)
+#     result = client.publish(topic, payload)
+#     status = result[0]
+#     if status == 0:
+#         print(f"✅ Published `{payload}` to `{topic}`")
+#         device = device_data.setdefault(device_id, {
+#             'weight_initial': None,
+#             'weight_final': None,
+#             'allow_new_weight': True
+#         })
+#         device['weight_initial'] = float(weight_initial)
+#         device_cycle_tracker[device_id] = device_cycle_tracker.get(device_id, 1)
+#     else:
+#         print(f"❌ Failed to publish to {topic}")
+
+# def mqtt_connect():
+#     client = mqtt.Client()
+#     client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+
+#     try:
+#         client.connect(MQTT_BROKER, MQTT_PORT, 60)
+#         client.loop_start()
+
+#         while True:
+#             cmd = input("📤 Type 'send', 'cycle', or 'exit': ").strip().lower()
+#             if cmd == 'send':
+#                 device_id = input("🔧 Enter device_id: ").strip()
+#                 weight_initial = input("⚖️  Enter weight_initial: ").strip()
+#                 try:
+#                     float(weight_initial)
+#                     publish_message(client, device_id, weight_initial)
+#                 except ValueError:
+#                     print("❌ Invalid number")
+#             elif cmd == 'cycle':
+#                 device_id = input("🔧 Enter device_id: ").strip()
+#                 cyclecount = input("🔁 Enter cyclecount: ").strip()
+#                 try:
+#                     float(cyclecount)
+#                     frontend_cycle_input(device_id, cyclecount)
+#                 except ValueError:
+#                     print("❌ Invalid number")
+#             elif cmd == 'exit':
+#                 print("👋 Bye!")
+#                 break
+#             else:
+#                 print("❓ Unknown command")
+
+#         client.loop_stop()
+#         client.disconnect()
+
+#     except Exception as e:
+#         print(f"❌ MQTT connection error: {e}")
+
+# if __name__ == "__main__":
+#     mqtt_connect()

@@ -27,5 +27,5 @@ urlpatterns = [
     # # path('device_cycle_details/<str:device_id>/cycles/', device_cycle_details),
     # path('get_deviceid_data/<str:device_id>/', get_deviceid_data),
     path('SaveMQTTMessageView/', SaveMQTTMessageView.as_view()),
-    path('CycleCount/', SaveCycleCountView.as_view())
+    path('CycleCountpost/', SaveCycleCountView.as_view())
 ]

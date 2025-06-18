@@ -1,15 +1,22 @@
 from django.contrib import admin
 from django.urls import path
 from app1.views import *
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # path('get_mqttdata/', get_mqttdata),
-    # path('cyclecount_api/', cyclecount_api),
-    # path('device_cycle_details/<str:device_id>/cycles/', device_cycle_details),
-    # path('get_deviceid_data/<str:device_id>/', get_deviceid_data),
-    path('SaveMQTTMessageView/', SaveMQTTMessageView.as_view()),
-    path('CycleCountpost/', SaveCycleCountView.as_view()),
-    path('get_data/', get_data),
-    # path('getmqttdata/', combined_mqtt_cycle_api),  # removed extra quote here
+    #############################################################
+    path('post_cyclecount/', handle_cycle),
+    path('getall_cycle/', get_all_cycles),
+    path('latest_cycles/', get_latest_cycles),
+    path('download_csv/', download_cycles_csv),
+
+
+    
+    #######################################
+    path('upload_project_data/', upload_project_data, name='upload_project_data'),
+    path('download_all_thermal_images/', download_all_images_combined),
+
 ]
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

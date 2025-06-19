@@ -184,7 +184,7 @@ def upload_project_data(request):
                 thermal_image_path = os.path.join(thermal_images_dir, thermal_image_name)
                 with open(thermal_image_path, 'wb') as f:
                     f.write(thermal_image_data)
-                thermal_image_url = f"http://4.194.236.6/media/thermal_images/{thermal_image_name}"
+                thermal_image_url = f"http://104.43.56.211/media/thermal_images/{thermal_image_name}"
                 image_urls['thermal_image_url'] = thermal_image_url
                 cache.set('latest_image_url', thermal_image_url, timeout=None)
 
@@ -197,7 +197,7 @@ def upload_project_data(request):
                 colour_image_path = os.path.join(colour_images_dir, colour_image_name)
                 with open(colour_image_path, 'wb') as f:
                     f.write(colour_image_data)
-                colour_image_url = f"http://4.194.236.6/media/colour_images/{colour_image_name}"
+                colour_image_url = f"http://104.43.56.211/media/colour_images/{colour_image_name}"
                 image_urls['colour_image_url'] = colour_image_url
                 cache.set('latest_colour_image_url', colour_image_url, timeout=None)
 

@@ -6,6 +6,11 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('create_user_feedtray/', create_user),
+    path('login/', login_user),
+    path('forgot_password/', forgot_password),
+    path('reset_password/', reset_password),
+    path('reset-password/', reset_password_page),  
     #############################################################
     path('post_cyclecount/', handle_cycle),
     path('getall_cycle/', get_all_cycles),

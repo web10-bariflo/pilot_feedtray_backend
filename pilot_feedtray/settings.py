@@ -60,7 +60,7 @@ ROOT_URLCONF = 'pilot_feedtray.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'app', 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -150,6 +150,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",          # Vite / React dev server
     "http://192.168.31.154:5173",     # If you're accessing via IP
+    "https://feedtray.bc-pl.com"
 ]
 
 
@@ -183,7 +184,10 @@ CHANNEL_LAYERS = {
 }
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:8000"   # your server's IP address
+    "http://localhost:8000",   # your server's IP address
+    "http://104.43.56.211:8000",
+    "https://feetraybg.bc-pl.com",
+
 ]
 
 STATIC_URL = '/static/'
@@ -191,3 +195,16 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
+
+
+
+
+BASE_URL = '104.43.56.211:8000'
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = "care.bariflolabs@gmail.com"
+EMAIL_HOST_PASSWORD = "pgvw cgtd hkbh chak"  # app password
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

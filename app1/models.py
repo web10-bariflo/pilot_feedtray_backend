@@ -48,3 +48,13 @@ class Cycle(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)  
     def __str__(self):
         return f"Cycle {self.id} - Count: {self.cyclecount}"
+
+
+class Scheduling(models.Model):
+    schedule_id= models.CharField(max_length=155) 
+    start_time = models.DateTimeField(default=timezone.now)
+    cyclecount = models.IntegerField()
+    recurring_hours = models.IntegerField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+

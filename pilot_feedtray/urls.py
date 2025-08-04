@@ -17,11 +17,17 @@ urlpatterns = [
     path('latest_cycles/', get_latest_cycles),
     path('download_csv/', download_cycles_csv),
 
+    ####################################################
+    path('create_schedule/', create_schedule),
+    path('get_all_schedules/', get_all_schedules),
+    path('get_all_schedule_ids/', get_all_schedule_ids),
+    path('delete_schedule_id/', delete_schedule_by_id),
 
-    
     #######################################
     path('upload_project_data/', upload_project_data, name='upload_project_data'),
     path('download_all_thermal_images/', download_all_images_combined),
 
 ]
+
+
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

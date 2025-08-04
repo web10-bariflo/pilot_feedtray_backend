@@ -141,8 +141,7 @@ USE_I18N = True
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -186,7 +185,7 @@ CHANNEL_LAYERS = {
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",   # your server's IP address
     "http://104.43.56.211:8000",
-    "https://feetraybg.bc-pl.com",
+    "https://feedtraybg.bc-pl.com",
 
 ]
 

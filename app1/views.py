@@ -350,6 +350,87 @@ def download_cycles_csv(request):
 
     return response
 
+######################################## scheduling #############################
+
+
+@csrf_exempt
+def create_schedule(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+
+            schedule_id = data.get('schedule_id')
+            start_time_str = data.get('start_time')  # Expecting ISO 8601 or 'YYYY-MM-DD HH:MM' format
+            cyclecount = data.get('cyclecount')
+            recurring_hours = data.get('recurring_hours')
+
+            # Basic validation
+            if not all([schedule_id, start_time_str, cyclecount is not None, recurring_hours is not None]):
+                return JsonResponse({'error': 'Missing required fields'}, status=400)
+
+            # Parse start_time
+            try:
+                start_time = timezone.datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
+                start_time = timezone.make_aware(start_time, timezone.get_current_timezone())
+            except ValueError:
+                return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
+
+            # Create and save schedule
+            schedule = Scheduling.objects.create(
+                schedule_id=schedule_id,
+                start_time=start_time,
+                cyclecount=cyclecount,
+                recurring_hours=recurring_hours
+            )
+
+            return JsonResponse({'status': 'success', 'id': schedule.id})
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+
+def get_all_schedules(request):
+    if request.method == 'GET':
+        schedules = Scheduling.objects.all().values(
+            'id',
+            'schedule_id',
+            'start_time',
+            'cyclecount',
+            'recurring_hours',
+            'timestamp'
+        )
+        return JsonResponse({'schedules': list(schedules)})
+
+
+def get_all_schedule_ids(request):
+    if request.method == 'GET':
+        schedule_ids = list(Scheduling.objects.values_list('schedule_id', flat=True).distinct())
+        return JsonResponse({'schedule_ids': schedule_ids})
+
+@csrf_exempt
+def delete_schedule_by_id(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            schedule_id = data.get('schedule_id')
+
+            if not schedule_id:
+                return JsonResponse({'error': 'schedule_id is required'}, status=400)
+
+            deleted_count, _ = Scheduling.objects.filter(schedule_id=schedule_id).delete()
+
+            if deleted_count == 0:
+                return JsonResponse({'message': 'No matching schedule found'}, status=404)
+
+            return JsonResponse({'message': f'Successfully deleted {deleted_count} record(s)'})
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 ######################################## websocket ###############################################

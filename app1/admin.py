@@ -10,3 +10,8 @@ class MyUser(admin.ModelAdmin):
 @admin.register(Cycle)
 class Cycle(admin.ModelAdmin):
     list_display=["id","cyclecount","start_time","end_time"]
+
+
+@admin.register(Scheduling)
+class Scheduling(admin.ModelAdmin):
+    list_display=["id","schedule_id","start_time","cyclecount","recurring_hours","timestamp"]

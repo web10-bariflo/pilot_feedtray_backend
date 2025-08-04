@@ -149,7 +149,10 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",          # Vite / React dev server
     "http://192.168.31.154:5173",     # If you're accessing via IP
-    "https://feedtray.bc-pl.com"
+    "https://feedtray.bc-pl.com",
+    "http://104.43.56.211"
+
+
 ]
 
 
@@ -186,6 +189,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",   # your server's IP address
     "http://104.43.56.211:8000",
     "https://feedtraybg.bc-pl.com",
+    "http://104.43.56.211",
+
 
 ]
 

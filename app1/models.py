@@ -56,5 +56,6 @@ class Scheduling(models.Model):
     cyclecount = models.IntegerField()
     recurring_hours = models.IntegerField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=255,null=True,blank=True)
 
 

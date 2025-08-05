@@ -352,30 +352,81 @@ def download_cycles_csv(request):
 
 ######################################## scheduling #############################
 
+import json
+import threading
+import paho.mqtt.client as mqtt
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from django.http import JsonResponse
+from .models import Scheduling
+
+# MQTT Configuration
+MQTT_BROKER = 'mqttbroker.bc-pl.com'
+MQTT_PORT = 1883
+MQTT_USER = 'mqttuser'
+MQTT_PASSWORD = 'Bfl@2025'
+DEVICE_ID = 'fdtryA00'
+STATUS_TOPIC = f"feeder/{DEVICE_ID}/cycle_status"
+ABORT_TOPIC = f"feeder/{DEVICE_ID}/cycle_abort"
+
+# Global MQTT client
+mqtt_client = None
+
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Connected to MQTT broker.")
+        client.subscribe(STATUS_TOPIC)
+        client.subscribe(ABORT_TOPIC)
+    else:
+        print(f"Failed to connect, return code {rc}")
+
+def on_message(client, userdata, msg):
+    message = msg.payload.decode()
+    print(f"Received message on {msg.topic}: {message}")
+
+    latest_schedule = Scheduling.objects.order_by('-id').first()
+    if latest_schedule:
+        if msg.topic == STATUS_TOPIC:
+            if message.strip().lower() == "all cycles completed successfully":
+                current_time = timezone.localtime(timezone.now())
+                latest_schedule.status = current_time.strftime('%Y-%m-%d %H:%M:%S')
+                latest_schedule.save()
+        elif msg.topic == ABORT_TOPIC:
+            latest_schedule.status = "Aborted"
+            latest_schedule.save()
+
+def start_mqtt_client():
+    global mqtt_client
+    mqtt_client = mqtt.Client()
+    mqtt_client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_start()
+
+# Start MQTT client on server boot if not already running
+if mqtt_client is None:
+    threading.Thread(target=start_mqtt_client).start()
 
 @csrf_exempt
 def create_schedule(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-
             schedule_id = data.get('schedule_id')
-            start_time_str = data.get('start_time')  # Expecting ISO 8601 or 'YYYY-MM-DD HH:MM' format
+            start_time_str = data.get('start_time')  # 'YYYY-MM-DD HH:MM'
             cyclecount = data.get('cyclecount')
             recurring_hours = data.get('recurring_hours')
 
-            # Basic validation
             if not all([schedule_id, start_time_str, cyclecount is not None, recurring_hours is not None]):
                 return JsonResponse({'error': 'Missing required fields'}, status=400)
 
-            # Parse start_time
             try:
                 start_time = timezone.datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
                 start_time = timezone.make_aware(start_time, timezone.get_current_timezone())
             except ValueError:
                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
 
-            # Create and save schedule
             schedule = Scheduling.objects.create(
                 schedule_id=schedule_id,
                 start_time=start_time,
@@ -390,6 +441,14 @@ def create_schedule(request):
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+# Publishing utilities
+def publish_cycle_status():
+    if mqtt_client:
+        mqtt_client.publish(STATUS_TOPIC, "All Cycles Completed Successfully")
+
+def publish_cycle_abort():
+    if mqtt_client:
+        mqtt_client.publish(ABORT_TOPIC, "Aborted")
 
 
 def get_all_schedules(request):
@@ -400,14 +459,18 @@ def get_all_schedules(request):
             'start_time',
             'cyclecount',
             'recurring_hours',
-            'timestamp'
+            'timestamp',
+            'status'
         )
         return JsonResponse({'schedules': list(schedules)})
 
 
 def get_all_schedule_ids(request):
     if request.method == 'GET':
-        schedule_ids = list(Scheduling.objects.values_list('schedule_id', flat=True).distinct())
+        current_time = now()
+        # Only include schedule_ids with start_time in the future
+        upcoming_schedules = Scheduling.objects.filter(start_time__gt=current_time)
+        schedule_ids = list(upcoming_schedules.values_list('schedule_id', flat=True).distinct())
         return JsonResponse({'schedule_ids': schedule_ids})
 
 @csrf_exempt

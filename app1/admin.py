@@ -14,4 +14,4 @@ class Cycle(admin.ModelAdmin):
 
 @admin.register(Scheduling)
 class Scheduling(admin.ModelAdmin):
-    list_display=["id","schedule_id","start_time","cyclecount","recurring_hours","timestamp"]
+    list_display=["id","schedule_id","start_time","cyclecount","recurring_hours","status","timestamp"]

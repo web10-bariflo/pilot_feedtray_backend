@@ -380,6 +380,8 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Failed to connect, return code {rc}")
 
+
+
 def on_message(client, userdata, msg):
     message = msg.payload.decode()
     print(f"Received message on {msg.topic}: {message}")
@@ -389,11 +391,13 @@ def on_message(client, userdata, msg):
         if msg.topic == STATUS_TOPIC:
             if message.strip().lower() == "all cycles completed successfully":
                 current_time = timezone.localtime(timezone.now())
-                latest_schedule.status = current_time.strftime('%Y-%m-%d %H:%M:%S')
+                formatted_time = current_time.strftime('%d/%m/%Y, %I:%M:%S %p')  # AM/PM format
+                latest_schedule.status = formatted_time
                 latest_schedule.save()
         elif msg.topic == ABORT_TOPIC:
             latest_schedule.status = "Aborted"
             latest_schedule.save()
+
 
 def start_mqtt_client():
     global mqtt_client

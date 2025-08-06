@@ -453,7 +453,7 @@ def publish_cycle_abort():
 
 def get_all_schedules(request):
     if request.method == 'GET':
-        schedules = Scheduling.objects.all().values(
+        schedules = Scheduling.objects.all().order_by('-timestamp').values(
             'id',
             'schedule_id',
             'start_time',
@@ -463,7 +463,6 @@ def get_all_schedules(request):
             'status'
         )
         return JsonResponse({'schedules': list(schedules)})
-
 
 def get_all_schedule_ids(request):
     if request.method == 'GET':

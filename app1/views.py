@@ -408,6 +408,7 @@ def start_mqtt_client():
 if mqtt_client is None:
     threading.Thread(target=start_mqtt_client).start()
 
+
 @csrf_exempt
 def create_schedule(request):
     if request.method == 'POST':
@@ -418,15 +419,22 @@ def create_schedule(request):
             cyclecount = data.get('cyclecount')
             recurring_hours = data.get('recurring_hours')
 
+            # Validate required fields
             if not all([schedule_id, start_time_str, cyclecount is not None, recurring_hours is not None]):
                 return JsonResponse({'error': 'Missing required fields'}, status=400)
 
+            # Parse and localize start_time
             try:
                 start_time = timezone.datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
                 start_time = timezone.make_aware(start_time, timezone.get_current_timezone())
             except ValueError:
                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
 
+            # Check for existing schedule with same start_time
+            if Scheduling.objects.filter(start_time=start_time).exists():
+                return JsonResponse({'error': 'Schedule Already Exists'}, status=409)
+
+            # Create the schedule
             schedule = Scheduling.objects.create(
                 schedule_id=schedule_id,
                 start_time=start_time,

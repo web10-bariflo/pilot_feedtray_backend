@@ -351,7 +351,7 @@ def download_cycles_csv(request):
     return response
 
 ######################################## scheduling #############################
-
+from django.db.models import Q
 import json
 import threading
 import paho.mqtt.client as mqtt
@@ -412,7 +412,6 @@ def start_mqtt_client():
 if mqtt_client is None:
     threading.Thread(target=start_mqtt_client).start()
 
-
 @csrf_exempt
 def create_schedule(request):
     if request.method == 'POST':
@@ -434,11 +433,19 @@ def create_schedule(request):
             except ValueError:
                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
 
-            # Check for existing schedule with same start_time
-            if Scheduling.objects.filter(start_time=start_time).exists():
-                return JsonResponse({'error': 'Schedule Already Exists'}, status=409)
+            # Calculate lock period for the new schedule
+            new_end_time = start_time + timezone.timedelta(minutes=int(cyclecount) * 2)
 
-            # Create the schedule
+            # Check for conflicts with existing schedules (only if NOT aborted)
+            existing_schedules = Scheduling.objects.exclude(status__iexact="Aborted")
+            for sched in existing_schedules:
+                sched_end_time = sched.start_time + timezone.timedelta(minutes=(int(sched.cyclecount) * 2) + 1)
+
+                # Overlap check: new schedule starts before existing ends, and new ends after existing starts
+                if start_time < sched_end_time and new_end_time > sched.start_time:
+                    return JsonResponse({'error': 'Schedule conflict: Overlaps with an existing active schedule'}, status=409)
+
+            # Create the schedule if no conflict
             schedule = Scheduling.objects.create(
                 schedule_id=schedule_id,
                 start_time=start_time,
@@ -452,6 +459,7 @@ def create_schedule(request):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 
 # Publishing utilities
 def publish_cycle_status():
@@ -475,13 +483,22 @@ def get_all_schedules(request):
             'status'
         )
         return JsonResponse({'schedules': list(schedules)})
+    
+from django.db.models import Q
 
 def get_all_schedule_ids(request):
     if request.method == 'GET':
         current_time = now()
-        # Only include schedule_ids with start_time in the future
-        upcoming_schedules = Scheduling.objects.filter(start_time__gt=current_time)
-        schedule_ids = list(upcoming_schedules.values_list('schedule_id', flat=True).distinct())
+        # Only future schedules AND status does not contain "aborted"
+        upcoming_schedules = Scheduling.objects.filter(
+            start_time__gt=current_time
+        ).exclude(
+            Q(status__icontains="aborted")
+        )
+        
+        schedule_ids = list(
+            upcoming_schedules.values_list('schedule_id', flat=True).distinct()
+        )
         return JsonResponse({'schedule_ids': schedule_ids})
 
 @csrf_exempt

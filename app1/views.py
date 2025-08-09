@@ -433,19 +433,11 @@ def create_schedule(request):
             except ValueError:
                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
 
-            # Calculate lock period for the new schedule
-            new_end_time = start_time + timezone.timedelta(minutes=int(cyclecount) * 2)
+            # Check for existing schedule with same start_time
+            if Scheduling.objects.filter(start_time=start_time).exists():
+                return JsonResponse({'error': 'Schedule Already Exists'}, status=409)
 
-            # Check for conflicts with existing schedules (only if NOT aborted)
-            existing_schedules = Scheduling.objects.exclude(status__iexact="Aborted")
-            for sched in existing_schedules:
-                sched_end_time = sched.start_time + timezone.timedelta(minutes=(int(sched.cyclecount) * 2) + 1)
-
-                # Overlap check: new schedule starts before existing ends, and new ends after existing starts
-                if start_time < sched_end_time and new_end_time > sched.start_time:
-                    return JsonResponse({'error': 'Schedule conflict: Overlaps with an existing active schedule'}, status=409)
-
-            # Create the schedule if no conflict
+            # Create the schedule
             schedule = Scheduling.objects.create(
                 schedule_id=schedule_id,
                 start_time=start_time,
@@ -459,7 +451,6 @@ def create_schedule(request):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
-
 
 # Publishing utilities
 def publish_cycle_status():

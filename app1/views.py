@@ -351,15 +351,225 @@ def download_cycles_csv(request):
     return response
 
 ######################################## scheduling #############################
+
+
+# from django.db.models import Q
+# from django.db.models.functions import Trim
+# import json
+# import threading
+# import paho.mqtt.client as mqtt
+# from django.views.decorators.csrf import csrf_exempt
+# from django.utils import timezone
+# from django.http import JsonResponse
+# from .models import Scheduling
+
+# # MQTT Configuration
+# MQTT_BROKER = 'mqttbroker.bc-pl.com'
+# MQTT_PORT = 1883
+# MQTT_USER = 'mqttuser'
+# MQTT_PASSWORD = 'Bfl@2025'
+# DEVICE_ID = 'fdtryA00'
+# STATUS_TOPIC = f"feeder/{DEVICE_ID}/cycle_status"
+# ABORT_TOPIC = f"feeder/{DEVICE_ID}/cycle_abort"
+
+# # Global MQTT client
+# mqtt_client = None
+
+# # Global variable to track the running schedule
+# current_running_id = None
+
+# def on_connect(client, userdata, flags, rc):
+#     if rc == 0:
+#         print("Connected to MQTT broker.")
+#         client.subscribe(STATUS_TOPIC)
+#         client.subscribe(ABORT_TOPIC)
+#     else:
+#         print(f"Failed to connect, return code {rc}")
+
+
+
+# def mark_due_schedule_running():
+#     global current_running_id
+#     now_time = timezone.now()
+
+#     # Pick the next due schedule that hasn't run yet
+#     next_schedule = Scheduling.objects.filter(
+#         start_time__lte=now_time,
+#         is_running=False,
+#         status=''  # or whatever indicates "not completed"
+#     ).order_by('start_time').first()
+
+#     if next_schedule:
+#         next_schedule.is_running = True
+#         next_schedule.save(update_fields=['is_running'])
+#         current_running_id = next_schedule.id
+#         print(f"[RUNNING] Schedule ID={current_running_id} started at {now_time}")
+#     else:
+#         current_running_id = None
+#         print("[DEBUG] No schedule ready to run")
+
+
+
+# def start_next_schedule():
+#     global current_running_id
+#     if current_running_id:
+#         return  # already tracking one
+
+#     now_time = timezone.now()
+#     next_schedule = (
+#         Scheduling.objects.filter(
+#             Q(status__isnull=True) | Q(status=''),
+#             start_time__lte=now_time,
+#             is_running=False
+#         )
+#         .order_by('start_time')
+#         .first()
+#     )
+#     if next_schedule:
+#         next_schedule.is_running = True
+#         next_schedule.save(update_fields=['is_running'])
+#         current_running_id = next_schedule.id
+#         print(f"Started schedule {next_schedule.id}")
+
+# def on_message(client, userdata, msg):
+#     global current_running_id
+#     message = msg.payload.decode().strip()
+#     now_time = timezone.now()
+
+#     print(f"\n[MQTT MESSAGE] Topic={msg.topic}, Payload='{message}', CurrentRunningID={current_running_id}")
+
+#     if current_running_id is None:
+#         print("[DEBUG] No schedule running, ignoring message.")
+#         return
+
+#     try:
+#         schedule = Scheduling.objects.get(id=current_running_id)
+#     except Scheduling.DoesNotExist:
+#         print(f"[WARNING] Schedule ID={current_running_id} not found")
+#         current_running_id = None
+#         return
+
+#     # Only process completion or abort for the *current* schedule
+#     if msg.topic == STATUS_TOPIC and message.lower() == "all cycles completed successfully":
+#         schedule.status = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
+#         schedule.is_running = False
+#         schedule.save(update_fields=['status', 'is_running'])
+#         print(f"[COMPLETED] Schedule ID={schedule.id} marked as COMPLETED")
+
+#         # Now free the current_running_id
+#         current_running_id = None
+
+#         # Start the next task ONLY after current task is cleared
+#         mark_due_schedule_running()
+
+#     elif msg.topic == ABORT_TOPIC:
+#         schedule.status = "Aborted"
+#         schedule.is_running = False
+#         schedule.save(update_fields=['status', 'is_running'])
+#         print(f"[ABORTED] Schedule ID={schedule.id} marked as ABORTED")
+
+#         # Free current_running_id and pick next
+#         current_running_id = None
+#         mark_due_schedule_running()
+
+#     else:
+#         print("[DEBUG] Message ignored (not a completion or abort).")
+
+
+
+
+
+
+# def start_mqtt_client():
+#     global mqtt_client
+#     mqtt_client = mqtt.Client()
+#     mqtt_client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+#     mqtt_client.on_connect = on_connect
+#     mqtt_client.on_message = on_message
+#     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+#     mqtt_client.loop_start()
+
+
+# # Start MQTT client on server boot if not already running
+# if mqtt_client is None:
+#     threading.Thread(target=start_mqtt_client).start()
+
+
+# @csrf_exempt
+# def create_schedule(request):
+#     if request.method == 'POST':
+#         try:
+#             data = json.loads(request.body)
+#             schedule_id = data.get('schedule_id')
+#             start_time_str = data.get('start_time')  # 'YYYY-MM-DD HH:MM'
+#             cyclecount = data.get('cyclecount')
+#             recurring_hours = data.get('recurring_hours')
+
+#             # Validate required fields
+#             if not all([schedule_id, start_time_str, cyclecount is not None, recurring_hours is not None]):
+#                 return JsonResponse({'error': 'Missing required fields'}, status=400)
+
+#             # Parse and localize start_time
+#             try:
+#                 start_time = timezone.datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
+#                 start_time = timezone.make_aware(start_time, timezone.get_current_timezone())
+#             except ValueError:
+#                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
+
+#             # Calculate lock period for the new schedule
+#             new_end_time = start_time + timezone.timedelta(minutes=int(cyclecount) * 2)
+
+#             # Check for conflicts with existing schedules (only if NOT aborted)
+#             existing_schedules = Scheduling.objects.exclude(status__iexact="Aborted")
+#             for sched in existing_schedules:
+#                 sched_end_time = sched.start_time + timezone.timedelta(minutes=(int(sched.cyclecount) * 2) + 1)
+
+#                 # Overlap check: new schedule starts before existing ends, and new ends after existing starts
+#                 if start_time < sched_end_time and new_end_time > sched.start_time:
+#                     return JsonResponse({'error': 'Schedule conflict: Overlaps with an existing active schedule'}, status=409)
+
+#             # Create the schedule if no conflict
+#             schedule = Scheduling.objects.create(
+#                 schedule_id=schedule_id,
+#                 start_time=start_time,
+#                 cyclecount=cyclecount,
+#                 recurring_hours=recurring_hours,
+#                 is_running=False  # ensure default
+#             )
+
+#             return JsonResponse({'status': 'success', 'id': schedule.id})
+
+#         except json.JSONDecodeError:
+#             return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+#     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+# # Publishing utilities
+# def publish_cycle_status():
+#     if mqtt_client:
+#         mqtt_client.publish(STATUS_TOPIC, "All Cycles Completed Successfully")
+
+
+# def publish_cycle_abort():
+#     if mqtt_client:
+#         mqtt_client.publish(ABORT_TOPIC, "Aborted")
+
+
+
+############################################## 12-08-2025
+
+
 from django.db.models import Q
-import json
-import threading
-import paho.mqtt.client as mqtt
-from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from .models import Scheduling
-
+import json
+import threading
+import time
+import paho.mqtt.client as mqtt
+import threading
 # MQTT Configuration
 MQTT_BROKER = 'mqttbroker.bc-pl.com'
 MQTT_PORT = 1883
@@ -369,8 +579,11 @@ DEVICE_ID = 'fdtryA00'
 STATUS_TOPIC = f"feeder/{DEVICE_ID}/cycle_status"
 ABORT_TOPIC = f"feeder/{DEVICE_ID}/cycle_abort"
 
-# Global MQTT client
+# Global vars
+# Global vars
 mqtt_client = None
+current_running_id = None
+CHECK_INTERVAL = 5  # seconds
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -380,23 +593,106 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Failed to connect, return code {rc}")
 
+def pick_next_schedule():
+    global current_running_id
 
+    # Avoid picking a new schedule if one is still running
+    if current_running_id:
+        print(f"[INFO] A schedule is already running (ID={current_running_id}), skipping pick.")
+        return
+
+    now_time = timezone.localtime(timezone.now())
+    next_schedule = (
+        Scheduling.objects
+        .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+        .order_by('start_time', 'id')
+        .first()
+    )
+
+    if next_schedule:
+        next_schedule.is_running = True
+        next_schedule.save(update_fields=['is_running'])
+        current_running_id = next_schedule.id
+
+        print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
+        # 🚀 Trigger the actual work — for example send MQTT start signal here
+        # client.publish(START_TOPIC, payload="Start", qos=1)
+    else:
+        print("[INFO] No schedules ready to start.")
+
+
+def scheduler_loop():
+    """Background loop to continuously check and start due schedules."""
+    while True:
+        try:
+            pick_next_schedule()
+        except Exception as e:
+            print(f"[ERROR] Scheduler loop: {e}")
+        time.sleep(CHECK_INTERVAL)
 
 def on_message(client, userdata, msg):
-    message = msg.payload.decode()
-    print(f"Received message on {msg.topic}: {message}")
+    global current_running_id
+    message = msg.payload.decode().strip()
+    now_time = timezone.now()
 
-    latest_schedule = Scheduling.objects.order_by('-id').first()
-    if latest_schedule:
-        if msg.topic == STATUS_TOPIC:
-            if message.strip().lower() == "all cycles completed successfully":
-                current_time = timezone.localtime(timezone.now())
-                formatted_time = current_time.strftime('%d/%m/%Y, %I:%M:%S %p')  # AM/PM format
-                latest_schedule.status = formatted_time
-                latest_schedule.save()
-        elif msg.topic == ABORT_TOPIC:
-            latest_schedule.status = "Aborted"
-            latest_schedule.save()
+    print(f"\n[MQTT MESSAGE] Topic={msg.topic}, Payload='{message}'")
+
+    # Make sure we have a specific schedule we're tracking
+    if not current_running_id:
+        print("[DEBUG] No running schedule ID stored, ignoring message.")
+        return
+
+    try:
+        schedule = Scheduling.objects.get(id=current_running_id)
+    except Scheduling.DoesNotExist:
+        print(f"[WARNING] Schedule ID={current_running_id} not found in DB.")
+        return
+
+    # Completion message handling
+    if msg.topic == STATUS_TOPIC and message.lower() == "all cycles completed successfully".lower():
+        schedule.status = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
+        schedule.save(update_fields=['status'])
+        print(f"[COMPLETED] Schedule ID={schedule.id} status set to COMPLETED")
+
+        def delayed_stop(sched_id):
+            global current_running_id
+            time.sleep(3)
+            try:
+                sched = Scheduling.objects.get(id=sched_id)
+                sched.is_running = False
+                sched.save(update_fields=['is_running'])
+                print(f"[INFO] Schedule ID={sched_id} is_running set to False after delay")
+            except Scheduling.DoesNotExist:
+                print(f"[WARNING] Schedule ID={sched_id} not found during delayed stop")
+            finally:
+                current_running_id = None
+                pick_next_schedule()
+
+        threading.Thread(target=delayed_stop, args=(schedule.id,), daemon=True).start()
+
+    elif msg.topic == ABORT_TOPIC:
+        schedule.status = "Aborted"
+        schedule.save(update_fields=['status'])
+        print(f"[ABORTED] Schedule ID={schedule.id} status set to ABORTED")
+
+        def delayed_abort(sched_id):
+            global current_running_id
+            time.sleep(3)
+            try:
+                sched = Scheduling.objects.get(id=sched_id)
+                sched.is_running = False
+                sched.save(update_fields=['is_running'])
+                print(f"[INFO] Schedule ID={sched_id} is_running set to False after delay")
+            except Scheduling.DoesNotExist:
+                print(f"[WARNING] Schedule ID={sched_id} not found during delayed abort")
+            finally:
+                current_running_id = None
+                pick_next_schedule()
+
+        threading.Thread(target=delayed_abort, args=(schedule.id,), daemon=True).start()
+
+    else:
+        print("[DEBUG] Message ignored (not a completion or abort).")
 
 
 def start_mqtt_client():
@@ -408,9 +704,10 @@ def start_mqtt_client():
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_start()
 
-# Start MQTT client on server boot if not already running
+# Start background services
 if mqtt_client is None:
-    threading.Thread(target=start_mqtt_client).start()
+    threading.Thread(target=start_mqtt_client, daemon=True).start()
+    threading.Thread(target=scheduler_loop, daemon=True).start()
 
 @csrf_exempt
 def create_schedule(request):
@@ -418,35 +715,36 @@ def create_schedule(request):
         try:
             data = json.loads(request.body)
             schedule_id = data.get('schedule_id')
-            start_time_str = data.get('start_time')  # 'YYYY-MM-DD HH:MM'
+            start_time_str = data.get('start_time')
             cyclecount = data.get('cyclecount')
             recurring_hours = data.get('recurring_hours')
 
-            # Validate required fields
             if not all([schedule_id, start_time_str, cyclecount is not None, recurring_hours is not None]):
                 return JsonResponse({'error': 'Missing required fields'}, status=400)
 
-            # Parse and localize start_time
             try:
                 start_time = timezone.datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
                 start_time = timezone.make_aware(start_time, timezone.get_current_timezone())
             except ValueError:
                 return JsonResponse({'error': 'Invalid start_time format. Use YYYY-MM-DD HH:MM'}, status=400)
 
-            # Check for existing schedule with same start_time
-            if Scheduling.objects.filter(start_time=start_time).exists():
-                return JsonResponse({'error': 'Schedule Already Exists'}, status=409)
+            new_end_time = start_time + timezone.timedelta(minutes=int(cyclecount) * 2)
+            existing_schedules = Scheduling.objects.exclude(status__iexact="Aborted")
 
-            # Create the schedule
+            for sched in existing_schedules:
+                sched_end_time = sched.start_time + timezone.timedelta(minutes=(int(sched.cyclecount) * 2) + 1)
+                if start_time < sched_end_time and new_end_time > sched.start_time:
+                    return JsonResponse({'error': 'Schedule conflict: Overlaps with an existing active schedule'}, status=409)
+
             schedule = Scheduling.objects.create(
                 schedule_id=schedule_id,
                 start_time=start_time,
                 cyclecount=cyclecount,
-                recurring_hours=recurring_hours
+                recurring_hours=recurring_hours,
+                is_running=False
             )
 
             return JsonResponse({'status': 'success', 'id': schedule.id})
-
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
@@ -462,19 +760,27 @@ def publish_cycle_abort():
         mqtt_client.publish(ABORT_TOPIC, "Aborted")
 
 
+
 def get_all_schedules(request):
     if request.method == 'GET':
-        schedules = Scheduling.objects.all().order_by('-timestamp').values(
-            'id',
-            'schedule_id',
-            'start_time',
-            'cyclecount',
-            'recurring_hours',
-            'timestamp',
-            'status'
+        schedules = list(
+            Scheduling.objects.all()
+            .order_by('-timestamp')
+            .values(
+                'id',
+                'schedule_id',
+                'start_time',
+                'cyclecount',
+                'recurring_hours',
+                'timestamp',
+                'status'
+            )
         )
-        return JsonResponse({'schedules': list(schedules)})
-    
+        # import json
+        # print("DEBUG get_all_schedules JSON:", json.dumps(schedules, indent=2, default=str))
+        return JsonResponse({'schedules': schedules})
+
+
 from django.db.models import Q
 
 def get_all_schedule_ids(request):

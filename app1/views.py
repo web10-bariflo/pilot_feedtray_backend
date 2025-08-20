@@ -650,9 +650,11 @@ def on_message(client, userdata, msg):
 
     # Completion message handling
     if msg.topic == STATUS_TOPIC and message.lower() == "all cycles completed successfully".lower():
-        schedule.status = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
+        completion_time = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
+        schedule.status = completion_time   # <-- only time
         schedule.save(update_fields=['status'])
-        print(f"[COMPLETED] Schedule ID={schedule.id} status set to COMPLETED")
+        print(f"[COMPLETED] Schedule ID={schedule.id} finished at {completion_time}")
+
 
         def delayed_stop(sched_id):
             global current_running_id

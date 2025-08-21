@@ -593,15 +593,55 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Failed to connect, return code {rc}")
 
+# def pick_next_schedule():
+#     global current_running_id
+
+#     # Avoid picking a new schedule if one is still running
+#     if current_running_id:
+#         print(f"[INFO] A schedule is already running (ID={current_running_id}), skipping pick.")
+#         return
+
+#     now_time = timezone.localtime(timezone.now())
+#     next_schedule = (
+#         Scheduling.objects
+#         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+#         .order_by('start_time', 'id')
+#         .first()
+#     )
+
+#     if next_schedule:
+#         next_schedule.is_running = True
+#         next_schedule.save(update_fields=['is_running'])
+#         current_running_id = next_schedule.id
+
+#         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
+#         # 🚀 Trigger the actual work — for example send MQTT start signal here
+#         # client.publish(START_TOPIC, payload="Start", qos=1)
+#     else:
+#         print("[INFO] No schedules ready to start.")
+
+
+
 def pick_next_schedule():
     global current_running_id
 
-    # Avoid picking a new schedule if one is still running
+    now_time = timezone.localtime(timezone.now())
+
+    # If something is already running
     if current_running_id:
-        print(f"[INFO] A schedule is already running (ID={current_running_id}), skipping pick.")
+        # mark all due schedules as SKIPPED
+        skipped_schedules = (
+            Scheduling.objects
+            .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+            .exclude(id=current_running_id)
+        )
+        for sched in skipped_schedules:
+            sched.status = "SKIPPED"
+            sched.save(update_fields=['status'])
+            print(f"[SKIPPED] Schedule ID={sched.id} marked as SKIPPED")
         return
 
-    now_time = timezone.localtime(timezone.now())
+    # Normal picking flow
     next_schedule = (
         Scheduling.objects
         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
@@ -613,10 +653,7 @@ def pick_next_schedule():
         next_schedule.is_running = True
         next_schedule.save(update_fields=['is_running'])
         current_running_id = next_schedule.id
-
         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
-        # 🚀 Trigger the actual work — for example send MQTT start signal here
-        # client.publish(START_TOPIC, payload="Start", qos=1)
     else:
         print("[INFO] No schedules ready to start.")
 
@@ -649,28 +686,31 @@ def on_message(client, userdata, msg):
         return
 
     # Completion message handling
-    if msg.topic == STATUS_TOPIC and message.lower() == "all cycles completed successfully".lower():
-        completion_time = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
-        schedule.status = completion_time   # <-- only time
-        schedule.save(update_fields=['status'])
-        print(f"[COMPLETED] Schedule ID={schedule.id} finished at {completion_time}")
+    if msg.topic == STATUS_TOPIC:
+        # Normalize: lowercase + remove extra spaces
+        normalized_msg = " ".join(message.split()).lower()
 
+        if normalized_msg == "all cycles completed successfully":
+            completion_time = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
+            schedule.status = completion_time   # only time
+            schedule.save(update_fields=['status'])
+            print(f"[COMPLETED] Schedule ID={schedule.id} finished at {completion_time}")
 
-        def delayed_stop(sched_id):
-            global current_running_id
-            time.sleep(3)
-            try:
-                sched = Scheduling.objects.get(id=sched_id)
-                sched.is_running = False
-                sched.save(update_fields=['is_running'])
-                print(f"[INFO] Schedule ID={sched_id} is_running set to False after delay")
-            except Scheduling.DoesNotExist:
-                print(f"[WARNING] Schedule ID={sched_id} not found during delayed stop")
-            finally:
-                current_running_id = None
-                pick_next_schedule()
+            def delayed_stop(sched_id):
+                global current_running_id
+                time.sleep(3)
+                try:
+                    sched = Scheduling.objects.get(id=sched_id)
+                    sched.is_running = False
+                    sched.save(update_fields=['is_running'])
+                    print(f"[INFO] Schedule ID={sched_id} is_running set to False after delay")
+                except Scheduling.DoesNotExist:
+                    print(f"[WARNING] Schedule ID={sched_id} not found during delayed stop")
+                finally:
+                    current_running_id = None
+                    pick_next_schedule()
 
-        threading.Thread(target=delayed_stop, args=(schedule.id,), daemon=True).start()
+            threading.Thread(target=delayed_stop, args=(schedule.id,), daemon=True).start()
 
     elif msg.topic == ABORT_TOPIC:
         schedule.status = "Aborted"

@@ -622,26 +622,53 @@ def on_connect(client, userdata, flags, rc):
 
 
 
+# def pick_next_schedule():
+#     global current_running_id
+
+#     now_time = timezone.localtime(timezone.now())
+
+#     # If something is already running
+#     if current_running_id:
+#         # mark all due schedules as SKIPPED
+#         skipped_schedules = (
+#             Scheduling.objects
+#             .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+#             .exclude(id=current_running_id)
+#         )
+#         for sched in skipped_schedules:
+#             sched.status = "SKIPPED"
+#             sched.save(update_fields=['status'])
+#             print(f"[SKIPPED] Schedule ID={sched.id} marked as SKIPPED")
+#         return
+
+#     # Normal picking flow
+#     next_schedule = (
+#         Scheduling.objects
+#         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+#         .order_by('start_time', 'id')
+#         .first()
+#     )
+
+#     if next_schedule:
+#         next_schedule.is_running = True
+#         next_schedule.save(update_fields=['is_running'])
+#         current_running_id = next_schedule.id
+#         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
+#     else:
+#         print("[INFO] No schedules ready to start.")
+
+
+
 def pick_next_schedule():
     global current_running_id
 
     now_time = timezone.localtime(timezone.now())
 
-    # If something is already running
+    # If something is already running, don't start another
     if current_running_id:
-        # mark all due schedules as SKIPPED
-        skipped_schedules = (
-            Scheduling.objects
-            .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
-            .exclude(id=current_running_id)
-        )
-        for sched in skipped_schedules:
-            sched.status = "SKIPPED"
-            sched.save(update_fields=['status'])
-            print(f"[SKIPPED] Schedule ID={sched.id} marked as SKIPPED")
         return
 
-    # Normal picking flow
+    # Get next due schedule
     next_schedule = (
         Scheduling.objects
         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
@@ -654,8 +681,38 @@ def pick_next_schedule():
         next_schedule.save(update_fields=['is_running'])
         current_running_id = next_schedule.id
         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
+
+        # Start watchdog timer for this schedule
+        threading.Thread(target=watchdog_for_schedule, args=(next_schedule.id,), daemon=True).start()
     else:
         print("[INFO] No schedules ready to start.")
+
+
+def watchdog_for_schedule(sched_id):
+    """
+    Watchdog to ensure each schedule either gets status/abort,
+    or is marked SKIPPED if nothing received in time.
+    """
+    global current_running_id
+    try:
+        sched = Scheduling.objects.get(id=sched_id)
+    except Scheduling.DoesNotExist:
+        return
+
+    # Give schedule time window = cyclecount * 2 minutes (+ small buffer)
+    wait_time = (int(sched.cyclecount) * 2 * 60) + 10
+    time.sleep(wait_time)
+
+    # Re-check after wait
+    sched.refresh_from_db()
+    if sched.status is None:  # Still no status/abort
+        sched.status = "SKIPPED"
+        sched.is_running = False
+        sched.save(update_fields=['status', 'is_running'])
+        print(f"[WATCHDOG] Schedule ID={sched.id} marked as SKIPPED (no status received)")
+        current_running_id = None
+        pick_next_schedule()
+
 
 
 def scheduler_loop():

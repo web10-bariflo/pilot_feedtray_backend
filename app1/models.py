@@ -57,6 +57,6 @@ class Scheduling(models.Model):
     recurring_hours = models.IntegerField()
     timestamp = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=255,null=True,blank=True)
-
+    completed_at = models.DateTimeField(null=True, blank=True)
     is_running = models.BooleanField(default=False)
 

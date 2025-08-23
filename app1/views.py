@@ -561,8 +561,9 @@ def download_cycles_csv(request):
 
 
 from django.db.models import Q
-from django.utils import timezone
+from django.utils import timezone 
 from django.views.decorators.csrf import csrf_exempt
+from datetime import timedelta
 from django.http import JsonResponse
 from .models import Scheduling
 import json
@@ -581,9 +582,46 @@ ABORT_TOPIC = f"feeder/{DEVICE_ID}/cycle_abort"
 
 # Global vars
 # Global vars
+# mqtt_client = None
 mqtt_client = None
 current_running_id = None
 CHECK_INTERVAL = 5  # seconds
+
+
+
+def get_current_running():
+    """Return the schedule that is currently running (memory first, then DB)."""
+    global current_running_id
+
+    # 🔹 CHANGED: Use global if available
+    if current_running_id:
+        try:
+            return Scheduling.objects.get(id=current_running_id)
+        except Scheduling.DoesNotExist:
+            return None
+
+    # 🔹 CHANGED: Fallback to DB if global was reset
+    return Scheduling.objects.filter(is_running=True).first()
+
+
+# ----------------------------
+# Mark Schedule as Completed
+# ----------------------------
+def mark_schedule_completed(schedule):
+    """Mark a schedule as completed in DB."""
+    schedule.status = "Completed"
+    schedule.completed_at = timezone.now()   # 🔹 CHANGED: set completed_at
+    schedule.is_running = False
+    schedule.save(update_fields=['status', 'completed_at', 'is_running'])
+
+    # 🔹 CHANGED: delay clearing current_running_id
+    def clear_id():
+        global current_running_id
+        current_running_id = None
+        pick_next_schedule()  # continue with next job
+
+    threading.Timer(3, clear_id).start()  # 3s delay to allow MQTT messages
+
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -659,6 +697,7 @@ def on_connect(client, userdata, flags, rc):
 
 
 
+
 def pick_next_schedule():
     global current_running_id
 
@@ -671,14 +710,18 @@ def pick_next_schedule():
     # Get next due schedule
     next_schedule = (
         Scheduling.objects
-        .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
+        .filter(start_time__lte=now_time,
+                start_time__gte=now_time - timedelta(minutes=5),
+                is_running=False, 
+                status__in=[None, "Pending"])
         .order_by('start_time', 'id')
         .first()
     )
 
     if next_schedule:
         next_schedule.is_running = True
-        next_schedule.save(update_fields=['is_running'])
+        next_schedule.status = "Running"
+        next_schedule.save(update_fields=['is_running','status'])
         current_running_id = next_schedule.id
         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
 
@@ -705,8 +748,8 @@ def watchdog_for_schedule(sched_id):
 
     # Re-check after wait
     sched.refresh_from_db()
-    if sched.status is None:  # Still no status/abort
-        sched.status = "SKIPPED"
+    if sched.status is None or sched.status == "Running":  # Still no status/abort
+        sched.status = "Device Disconnected , Cycle kipped"
         sched.is_running = False
         sched.save(update_fields=['status', 'is_running'])
         print(f"[WATCHDOG] Schedule ID={sched.id} marked as SKIPPED (no status received)")
@@ -732,25 +775,43 @@ def on_message(client, userdata, msg):
     print(f"\n[MQTT MESSAGE] Topic={msg.topic}, Payload='{message}'")
 
     # Make sure we have a specific schedule we're tracking
-    if not current_running_id:
-        print("[DEBUG] No running schedule ID stored, ignoring message.")
+    if "Cycle Completed" in message or "All Cycles Completed" in message:
+        schedule = get_current_running()   # 🔹 CHANGED: now more robust
+        if schedule:
+            mark_schedule_completed(schedule)
+            print(f"[INFO] Schedule {schedule.id} marked completed at {schedule.completed_at}")
+        else:
+            print("[WARN] No running schedule found when completion message arrived (late MQTT?)")
+    else:
+        print(f"[DEBUG] Ignored payload: {message}")
+
+    schedule = get_current_running()
+    if not schedule:
+        print("[WARN] No running schedule found, ignoring message.")
         return
 
-    try:
-        schedule = Scheduling.objects.get(id=current_running_id)
-    except Scheduling.DoesNotExist:
-        print(f"[WARNING] Schedule ID={current_running_id} not found in DB.")
-        return
+    # if not current_running_id:
+    #     print("[DEBUG] No running schedule ID stored, ignoring message.")
+    #     return
+
+    # try:
+    #     schedule = Scheduling.objects.get(id=current_running_id)
+    # except Scheduling.DoesNotExist:
+    #     print(f"[WARNING] Schedule ID={current_running_id} not found in DB.")
+    #     return
 
     # Completion message handling
     if msg.topic == STATUS_TOPIC:
         # Normalize: lowercase + remove extra spaces
         normalized_msg = " ".join(message.split()).lower()
+# strftime('%d/%m/%Y, %I:%M:%S %p')
 
-        if normalized_msg == "all cycles completed successfully":
-            completion_time = timezone.localtime(now_time).strftime('%d/%m/%Y, %I:%M:%S %p')
-            schedule.status = completion_time   # only time
-            schedule.save(update_fields=['status'])
+
+        if "all cycles completed" in normalized_msg:
+            completion_time = timezone.localtime(now_time)
+            schedule.status = "Completed"   # only time
+            schedule.completed_at = completion_time
+            schedule.save(update_fields=['status', 'completed_at'])
             print(f"[COMPLETED] Schedule ID={schedule.id} finished at {completion_time}")
 
             def delayed_stop(sched_id):
@@ -771,7 +832,8 @@ def on_message(client, userdata, msg):
 
     elif msg.topic == ABORT_TOPIC:
         schedule.status = "Aborted"
-        schedule.save(update_fields=['status'])
+        schedule.is_running = False
+        schedule.save(update_fields=['status','is_running'])
         print(f"[ABORTED] Schedule ID={schedule.id} status set to ABORTED")
 
         def delayed_abort(sched_id):
@@ -840,7 +902,8 @@ def create_schedule(request):
                 start_time=start_time,
                 cyclecount=cyclecount,
                 recurring_hours=recurring_hours,
-                is_running=False
+                is_running=False,
+                status="Pending"
             )
 
             return JsonResponse({'status': 'success', 'id': schedule.id})

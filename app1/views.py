@@ -935,6 +935,7 @@ def get_all_schedules(request):
                 'cyclecount',
                 'recurring_hours',
                 'timestamp',
+                'status',
                 'completed_at'
             )
         )

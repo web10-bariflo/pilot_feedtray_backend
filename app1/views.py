@@ -749,7 +749,7 @@ def watchdog_for_schedule(sched_id):
     # Re-check after wait
     sched.refresh_from_db()
     if sched.status is None or sched.status == "Running":  # Still no status/abort
-        sched.status = "Device Disconnected , Cycle kipped"
+        sched.status = "Device Disconnected , Cycle Skipped"
         sched.is_running = False
         sched.save(update_fields=['status', 'is_running'])
         print(f"[WATCHDOG] Schedule ID={sched.id} marked as SKIPPED (no status received)")
@@ -935,7 +935,7 @@ def get_all_schedules(request):
                 'cyclecount',
                 'recurring_hours',
                 'timestamp',
-                'status'
+                'completed_at'
             )
         )
         # import json

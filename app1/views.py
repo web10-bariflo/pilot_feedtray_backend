@@ -579,10 +579,6 @@ MQTT_PASSWORD = 'Bfl@2025'
 DEVICE_ID = 'fdtryA00'
 STATUS_TOPIC = f"feeder/{DEVICE_ID}/cycle_status"
 ABORT_TOPIC = f"feeder/{DEVICE_ID}/cycle_abort"
-
-# Global vars
-# Global vars
-# mqtt_client = None
 mqtt_client = None
 current_running_id = None
 CHECK_INTERVAL = 5  # seconds
@@ -630,71 +626,6 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(ABORT_TOPIC)
     else:
         print(f"Failed to connect, return code {rc}")
-
-# def pick_next_schedule():
-#     global current_running_id
-
-#     # Avoid picking a new schedule if one is still running
-#     if current_running_id:
-#         print(f"[INFO] A schedule is already running (ID={current_running_id}), skipping pick.")
-#         return
-
-#     now_time = timezone.localtime(timezone.now())
-#     next_schedule = (
-#         Scheduling.objects
-#         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
-#         .order_by('start_time', 'id')
-#         .first()
-#     )
-
-#     if next_schedule:
-#         next_schedule.is_running = True
-#         next_schedule.save(update_fields=['is_running'])
-#         current_running_id = next_schedule.id
-
-#         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
-#         # 🚀 Trigger the actual work — for example send MQTT start signal here
-#         # client.publish(START_TOPIC, payload="Start", qos=1)
-#     else:
-#         print("[INFO] No schedules ready to start.")
-
-
-
-# def pick_next_schedule():
-#     global current_running_id
-
-#     now_time = timezone.localtime(timezone.now())
-
-#     # If something is already running
-#     if current_running_id:
-#         # mark all due schedules as SKIPPED
-#         skipped_schedules = (
-#             Scheduling.objects
-#             .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
-#             .exclude(id=current_running_id)
-#         )
-#         for sched in skipped_schedules:
-#             sched.status = "SKIPPED"
-#             sched.save(update_fields=['status'])
-#             print(f"[SKIPPED] Schedule ID={sched.id} marked as SKIPPED")
-#         return
-
-#     # Normal picking flow
-#     next_schedule = (
-#         Scheduling.objects
-#         .filter(start_time__lte=now_time, is_running=False, status__isnull=True)
-#         .order_by('start_time', 'id')
-#         .first()
-#     )
-
-#     if next_schedule:
-#         next_schedule.is_running = True
-#         next_schedule.save(update_fields=['is_running'])
-#         current_running_id = next_schedule.id
-#         print(f"[STARTED] Schedule ID={current_running_id} started at {now_time}")
-#     else:
-#         print("[INFO] No schedules ready to start.")
-
 
 
 
@@ -775,7 +706,7 @@ def on_message(client, userdata, msg):
     print(f"\n[MQTT MESSAGE] Topic={msg.topic}, Payload='{message}'")
 
     # Make sure we have a specific schedule we're tracking
-    if "Cycle Completed" in message or "All Cycles Completed" in message:
+    if "All Cycles Completed" in message:
         schedule = get_current_running()   # 🔹 CHANGED: now more robust
         if schedule:
             mark_schedule_completed(schedule)
@@ -790,17 +721,7 @@ def on_message(client, userdata, msg):
         print("[WARN] No running schedule found, ignoring message.")
         return
 
-    # if not current_running_id:
-    #     print("[DEBUG] No running schedule ID stored, ignoring message.")
-    #     return
 
-    # try:
-    #     schedule = Scheduling.objects.get(id=current_running_id)
-    # except Scheduling.DoesNotExist:
-    #     print(f"[WARNING] Schedule ID={current_running_id} not found in DB.")
-    #     return
-
-    # Completion message handling
     if msg.topic == STATUS_TOPIC:
         # Normalize: lowercase + remove extra spaces
         normalized_msg = " ".join(message.split()).lower()

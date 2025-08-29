@@ -288,10 +288,45 @@ def get_latest_cycles(request):
 
 
 
+# @require_GET
+# def get_all_cycles(request):
+#     try:
+#         all_cycles = Cycle.objects.order_by('-timestamp')
+
+#         data = [{
+#             'id': c.id,
+#             'cyclecount': c.cyclecount,
+#             'start_time': localtime(c.start_time).strftime('%Y-%m-%d %H:%M:%S') if c.start_time else None,
+#             'end_time': localtime(c.end_time).strftime('%Y-%m-%d %H:%M:%S') if c.end_time else None,
+#             'timestamp': localtime(c.timestamp).strftime('%Y-%m-%d %H:%M:%S') if c.timestamp else None,
+#         } for c in all_cycles]
+
+#         return JsonResponse(data, safe=False, status=200)
+
+#     except Exception as e:
+#         return JsonResponse({'error': str(e)}, status=500)
+
+
 @require_GET
 def get_all_cycles(request):
     try:
-        all_cycles = Cycle.objects.order_by('-timestamp')
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+
+        all_cycles = Cycle.objects.all().order_by('-timestamp')
+
+        if start_date and end_date:
+            try:
+                start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+                end_date_obj = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+
+                # get cycles that overlap with the range
+                all_cycles = all_cycles.filter(
+                    start_time__lte=end_date_obj,
+                    end_time__gte=start_date_obj
+                )
+            except ValueError:
+                return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
 
         data = [{
             'id': c.id,
@@ -308,6 +343,46 @@ def get_all_cycles(request):
 
 
 
+# @csrf_exempt
+# def download_cycles_csv(request):
+#     if request.method != 'POST':
+#         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+
+#     try:
+#         body = json.loads(request.body)
+#         from_date = body.get('from_date')
+#         to_date = body.get('to_date')
+#     except Exception as e:
+#         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+#     # Parse dates
+#     from_dt = parse_date(from_date) if from_date else None
+#     to_dt = parse_date(to_date) if to_date else None
+
+#     # Get filtered queryset
+#     cycles = Cycle.objects.all()
+#     if from_dt and to_dt:
+#         cycles = cycles.filter(timestamp__date__gte=from_dt, timestamp__date__lte=to_dt)
+#     cycles = cycles.order_by('-timestamp')
+
+#     # Prepare CSV response
+#     response = HttpResponse(content_type='text/csv')
+#     response['Content-Disposition'] = 'attachment; filename="cycles.csv"'
+
+#     writer = csv.writer(response)
+#     writer.writerow(['S.No', 'Cycle Count', 'Start Time', 'End Time', 'Timestamp'])
+
+#     for idx, cycle in enumerate(cycles, start=1):
+#         writer.writerow([
+#             idx,
+#             cycle.cyclecount,
+#             cycle.start_time.strftime('%Y-%m-%d %H:%M:%S') if cycle.start_time else '',
+#             cycle.end_time.strftime('%Y-%m-%d %H:%M:%S') if cycle.end_time else '',
+#             cycle.timestamp.strftime('%Y-%m-%d %H:%M:%S') if cycle.timestamp else ''
+#         ])
+
+#     return response
+
 
 
 @csrf_exempt
@@ -316,13 +391,14 @@ def download_cycles_csv(request):
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
 
     try:
-        body = json.loads(request.body)
+        # Decode bytes to string before loading
+        body = json.loads(request.body.decode("utf-8"))
         from_date = body.get('from_date')
         to_date = body.get('to_date')
     except Exception as e:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        return JsonResponse({'error': 'Invalid JSON', 'details': str(e)}, status=400)
 
-    # Parse dates
+    # Parse dates safely
     from_dt = parse_date(from_date) if from_date else None
     to_dt = parse_date(to_date) if to_date else None
 

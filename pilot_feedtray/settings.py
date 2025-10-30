@@ -94,8 +94,8 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'pilotfeedtray',                           
         'USER': 'Vertoxlabs',
-        'PASSWORD':'Vtx@2025',
-        'HOST': 'bcpostgressqlserver.postgres.database.azure.com',
+        'PASSWORD':'Vtx@mru@#5951#new',
+        'HOST': 'bcpostgressqlserver12.postgres.database.azure.com',
         'PORT': '5432',
     }
 }

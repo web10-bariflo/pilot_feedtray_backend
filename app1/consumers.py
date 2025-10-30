@@ -70,8 +70,8 @@ class ThermalImageConsumer(AsyncWebsocketConsumer):
             conn = psycopg2.connect(
                 dbname="checktray",
                 user="Vertoxlabs",
-                password="Vtx@2025",
-                host="bcpostgressqlserver.postgres.database.azure.com",
+                password="Vtx@mru@#5951#new",
+                host="bcpostgressqlserver12.postgres.database.azure.com",
                 port="5432"
             )
             cur = conn.cursor()

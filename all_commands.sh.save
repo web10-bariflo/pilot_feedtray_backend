@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Ensure /app/logs exists
+mkdir -p /app/logs
+
+# Graceful shutdown handler
+
+
+^G Help           ^O Write Out      ^W Where Is       ^K Cut            ^T Execute        ^C Location       M-U Undo          M-A Set Mark      M-] To Bracket    M-Q Previous      ^B Back
+^X Exit           ^R Read File      ^\ Replace        ^U Paste          ^J Justify        ^/ Go To Line   
+function terminate_processes {
+    echo "Terminating Daphne server..."
+    pkill -f "daphne"
+    exit
+}
+trap terminate_processes SIGTERM
+
+# Run migrations
+echo "Running migrations..."
+python3 manage.py migrate
+
+# Start Daphne in foreground
+
+
+
+echo "Starting Daphne server..."
+exec daphne -b 0.0.0.0 -p 8000 pilot_feedtray.asgi:application
+
+
+
+

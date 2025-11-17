@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'app1',
     'rest_framework',
-    'channels'
+    'channels',
+
 ]
 
 MIDDLEWARE = [
@@ -88,18 +89,29 @@ ASGI_APPLICATION = 'pilot_feedtray.asgi.application'
 #     }
 # }
 
+# DATABASES = {
+    
+#     'default':{
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'pilotfeedtray',                           
+#         'USER': 'Vertoxlabs',
+#         'PASSWORD':'Vtx@mru@#5951#new',
+#         'HOST': 'bcpostgressqlserver12.postgres.database.azure.com',
+#         'PORT': '5432',
+#     }
+# }
+
 DATABASES = {
     
     'default':{
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'pilotfeedtray',                           
-        'USER': 'Vertoxlabs',
-        'PASSWORD':'Vtx@mru@#5951#new',
-        'HOST': 'bcpostgressqlserver12.postgres.database.azure.com',
+        'USER': 'vertoxl',
+        'PASSWORD':'vertoxlabs',
+        'HOST': '192.168.1.140',
         'PORT': '5432',
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
